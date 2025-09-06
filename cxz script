@@ -420,3 +420,25 @@ do
 end
 
 print("[ClientOptimizer] Pronto. Painel carregado.")
+-- ======= BOTÃO DE ABRIR/FECHAR =======
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 50, 0, 50)
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -25) -- canto esquerdo da tela
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+toggleBtn.Text = "CXZ"
+toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.Parent = gui
+toggleBtn.Active = true
+toggleBtn.Draggable = true -- botão pode ser arrastado
+
+local btnCorner = Instance.new("UICorner", toggleBtn)
+btnCorner.CornerRadius = UDim.new(1, 0) -- forma redonda
+
+-- painel começa fechado
+main.Visible = false
+
+toggleBtn.MouseButton1Click:Connect(function()
+    main.Visible = not main.Visible
+end)
