@@ -1,4 +1,4 @@
---[[ 
+--[[
 Client Optimizer Panel (LocalScript)
 Coloque em: StarterPlayer > StarterPlayerScripts
 Funciona somente no cliente (sem executor).
@@ -13,196 +13,198 @@ local LocalPlayer = Players.LocalPlayer
 
 -- ===== State / Backups =====
 local State = {
-    RemoveFX = false,
-    LowGFX = false,
-    NoAnims = false,
-    HideParticles = false,
-    HideDecals = false,
+RemoveFX = false,
+LowGFX = false,
+NoAnims = false,
+HideParticles = false,
+HideDecals = false,
 }
 
 -- Guardar originais para restaurar
 local Backup = {
-    Lighting = {},
-    Parts = setmetatable({}, {__mode="k"}), -- fraco na memória
-    Particles = setmetatable({}, {__mode="k"}),
-    Decals = setmetatable({}, {__mode="k"}),
-    CharTracks = {}, -- animações do player
-    Terrain = {},
+Lighting = {},
+Parts = setmetatable({}, {__mode="k"}), -- fraco na memória
+Particles = setmetatable({}, {__mode="k"}),
+Decals = setmetatable({}, {__mode="k"}),
+CharTracks = {}, -- animações do player
+Terrain = {},
 }
 
 -- ===== Utils =====
 local function safeSet(obj, prop, value, bucket)
-    if not obj then return end
-    if bucket and bucket[obj] == nil then
-        bucket[obj] = bucket[obj] or {}
-        bucket[obj][prop] = obj[prop]
-    end
-    local ok,err = pcall(function() obj[prop] = value end)
-    if not ok then warn("[Optimizer] Falha set "..tostring(prop)..": "..tostring(err)) end
+if not obj then return end
+if bucket and bucket[obj] == nil then
+bucket[obj] = bucket[obj] or {}
+bucket[obj][prop] = obj[prop]
+end
+local ok,err = pcall(function() obj[prop] = value end)
+if not ok then warn("[Optimizer] Falha set "..tostring(prop)..": "..tostring(err)) end
 end
 
 local function restoreBucket(bucket)
-    for obj, props in pairs(bucket) do
-        if obj and obj.Parent then
-            for prop,original in pairs(props) do
-                pcall(function() obj[prop] = original end)
-            end
-        end
-    end
-    table.clear(bucket)
+for obj, props in pairs(bucket) do
+if obj and obj.Parent then
+for prop,original in pairs(props) do
+pcall(function() obj[prop] = original end)
+end
+end
+end
+table.clear(bucket)
 end
 
 local function iterDesc(classNames, root)
-    root = root or workspace
-    for _,inst in ipairs(root:GetDescendants()) do
-        for _,cn in ipairs(classNames) do
-            if inst:IsA(cn) then
-                coroutine.yield(inst)
-            end
-        end
-    end
+root = root or workspace
+for _,inst in ipairs(root:GetDescendants()) do
+for _,cn in ipairs(classNames) do
+if inst:IsA(cn) then
+coroutine.yield(inst)
+end
+end
+end
 end
 
 local function each(classNames, root)
-    return coroutine.wrap(function() iterDesc(classNames, root) end)
+return coroutine.wrap(function() iterDesc(classNames, root) end)
 end
 
 -- ===== Features =====
 
 -- 1) Remover Efeitos de Pós-processo e Neblina
 local function applyRemoveFX(on)
-    State.RemoveFX = on
+State.RemoveFX = on
 
-    if on then
-        -- Backups lighting únicos
-        if next(Backup.Lighting) == nil then
-            Backup.Lighting.FogStart = Lighting.FogStart
-            Backup.Lighting.FogEnd = Lighting.FogEnd
-            Backup.Lighting.Brightness = Lighting.Brightness
-            Backup.Lighting.GlobalShadows = Lighting.GlobalShadows
-            Backup.Lighting.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale
-            Backup.Lighting.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale
-            if Lighting:FindFirstChildOfClass("Atmosphere") then
-                Backup.Lighting.HasAtmosphere = true
-            end
-        end
+if on then  
+    -- Backups lighting únicos  
+    if next(Backup.Lighting) == nil then  
+        Backup.Lighting.FogStart = Lighting.FogStart  
+        Backup.Lighting.FogEnd = Lighting.FogEnd  
+        Backup.Lighting.Brightness = Lighting.Brightness  
+        Backup.Lighting.GlobalShadows = Lighting.GlobalShadows  
+        Backup.Lighting.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale  
+        Backup.Lighting.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale  
+        if Lighting:FindFirstChildOfClass("Atmosphere") then  
+            Backup.Lighting.HasAtmosphere = true  
+        end  
+    end  
 
-        -- Neve/névoa e brilho
-        safeSet(Lighting, "FogStart", 1e9, Backup.Lighting)
-        safeSet(Lighting, "FogEnd", 1e9, Backup.Lighting)
-        safeSet(Lighting, "Brightness", 2, Backup.Lighting)
-        safeSet(Lighting, "GlobalShadows", false, Backup.Lighting)
-        safeSet(Lighting, "EnvironmentDiffuseScale", 0, Backup.Lighting)
-        safeSet(Lighting, "EnvironmentSpecularScale", 0, Backup.Lighting)
+    -- Neve/névoa e brilho  
+    safeSet(Lighting, "FogStart", 1e9, Backup.Lighting)  
+    safeSet(Lighting, "FogEnd", 1e9, Backup.Lighting)  
+    safeSet(Lighting, "Brightness", 2, Backup.Lighting)  
+    safeSet(Lighting, "GlobalShadows", false, Backup.Lighting)  
+    safeSet(Lighting, "EnvironmentDiffuseScale", 0, Backup.Lighting)  
+    safeSet(Lighting, "EnvironmentSpecularScale", 0, Backup.Lighting)  
 
-        -- Remover/Desativar postFX (Bloom, DOF, ColorCorrection, SunRays)
-        for inst in each({"BloomEffect","DepthOfFieldEffect","ColorCorrectionEffect","SunRaysEffect"}, Lighting) do
-            safeSet(inst, "Enabled", false, Backup.Particles) -- reusar bucket simples
-        end
-        -- Atmosphere
-        local at = Lighting:FindFirstChildOfClass("Atmosphere")
-        if at then
-            safeSet(at, "Density", 0, Backup.Particles)
-            safeSet(at, "Haze", 0, Backup.Particles)
-        end
-    else
-        -- Restaurar
-        for k,v in pairs(Backup.Lighting) do
-            if Lighting[k] ~= nil then
-                pcall(function() Lighting[k] = v end)
-            end
-        end
-        table.clear(Backup.Lighting)
-        restoreBucket(Backup.Particles)
-    end
+    -- Remover/Desativar postFX (Bloom, DOF, ColorCorrection, SunRays)  
+    for inst in each({"BloomEffect","DepthOfFieldEffect","ColorCorrectionEffect","SunRaysEffect"}, Lighting) do  
+        safeSet(inst, "Enabled", false, Backup.Particles) -- reusar bucket simples  
+    end  
+    -- Atmosphere  
+    local at = Lighting:FindFirstChildOfClass("Atmosphere")  
+    if at then  
+        safeSet(at, "Density", 0, Backup.Particles)  
+        safeSet(at, "Haze", 0, Backup.Particles)  
+    end  
+else  
+    -- Restaurar  
+    for k,v in pairs(Backup.Lighting) do  
+        if Lighting[k] ~= nil then  
+            pcall(function() Lighting[k] = v end)  
+        end  
+    end  
+    table.clear(Backup.Lighting)  
+    restoreBucket(Backup.Particles)  
+end
+
 end
 
 -- 2) Melhorar FPS (materiais simples, sombras off, água e terrain leves)
 local function applyLowGFX(on)
-    State.LowGFX = on
+State.LowGFX = on
 
-    if on then
-        -- Lighting simplificado
-        if next(Backup.Lighting) == nil then
-            Backup.Lighting.FogStart = Lighting.FogStart
-            Backup.Lighting.FogEnd = Lighting.FogEnd
-            Backup.Lighting.Brightness = Lighting.Brightness
-            Backup.Lighting.GlobalShadows = Lighting.GlobalShadows
-            Backup.Lighting.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale
-            Backup.Lighting.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale
-        end
-        safeSet(Lighting, "GlobalShadows", false, Backup.Lighting)
-        safeSet(Lighting, "EnvironmentDiffuseScale", 0, Backup.Lighting)
-        safeSet(Lighting, "EnvironmentSpecularScale", 0, Backup.Lighting)
+if on then  
+    -- Lighting simplificado  
+    if next(Backup.Lighting) == nil then  
+        Backup.Lighting.FogStart = Lighting.FogStart  
+        Backup.Lighting.FogEnd = Lighting.FogEnd  
+        Backup.Lighting.Brightness = Lighting.Brightness  
+        Backup.Lighting.GlobalShadows = Lighting.GlobalShadows  
+        Backup.Lighting.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale  
+        Backup.Lighting.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale  
+    end  
+    safeSet(Lighting, "GlobalShadows", false, Backup.Lighting)  
+    safeSet(Lighting, "EnvironmentDiffuseScale", 0, Backup.Lighting)  
+    safeSet(Lighting, "EnvironmentSpecularScale", 0, Backup.Lighting)  
 
-        -- Parts: material/plastic, sem reflexão e fidelidade baixa
-        for part in each({"BasePart"}) do
-            if not Backup.Parts[part] then
-                Backup.Parts[part] = {
-                    Material = part.Material,
-                    Reflectance = part.Reflectance,
-                    CastShadow = part.CastShadow,
-                    -- RenderFidelity existe em MeshPart/UnionOperation
-                }
-                if part:IsA("MeshPart") or part:IsA("UnionOperation") then
-                    Backup.Parts[part].RenderFidelity = part.RenderFidelity
-                end
-            end
-            pcall(function()
-                part.Material = Enum.Material.Plastic
-                part.Reflectance = 0
-                part.CastShadow = false
-                if part:IsA("MeshPart") or part:IsA("UnionOperation") then
-                    part.RenderFidelity = Enum.RenderFidelity.Performance
-                end
-            end)
-        end
+    -- Parts: material/plastic, sem reflexão e fidelidade baixa  
+    for part in each({"BasePart"}) do  
+        if not Backup.Parts[part] then  
+            Backup.Parts[part] = {  
+                Material = part.Material,  
+                Reflectance = part.Reflectance,  
+                CastShadow = part.CastShadow,  
+                -- RenderFidelity existe em MeshPart/UnionOperation  
+            }  
+            if part:IsA("MeshPart") or part:IsA("UnionOperation") then  
+                Backup.Parts[part].RenderFidelity = part.RenderFidelity  
+            end  
+        end  
+        pcall(function()  
+            part.Material = Enum.Material.Plastic  
+            part.Reflectance = 0  
+            part.CastShadow = false  
+            if part:IsA("MeshPart") or part:IsA("UnionOperation") then  
+                part.RenderFidelity = Enum.RenderFidelity.Performance  
+            end  
+        end)  
+    end  
 
-        -- Terrain simples
-        local terrain = workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            if next(Backup.Terrain) == nil then
-                Backup.Terrain.WaterWaveSize = terrain.WaterWaveSize
-                Backup.Terrain.WaterWaveSpeed = terrain.WaterWaveSpeed
-                Backup.Terrain.WaterReflectance = terrain.WaterReflectance
-                Backup.Terrain.WaterTransparency = terrain.WaterTransparency
-                Backup.Terrain.Decoration = terrain.Decoration
-            end
-            safeSet(terrain, "WaterWaveSize", 0, Backup.Terrain)
-            safeSet(terrain, "WaterWaveSpeed", 0, Backup.Terrain)
-            safeSet(terrain, "WaterReflectance", 0, Backup.Terrain)
-            safeSet(terrain, "WaterTransparency", 1, Backup.Terrain)
-            safeSet(terrain, "Decoration", false, Backup.Terrain)
-        end
-    else
-        -- Restaurar
-        restoreBucket(Backup.Parts)
-        -- Lighting parte já será restaurada quando RemoveFX off, mas garantimos:
-        for k,v in pairs(Backup.Lighting) do
-            if Lighting[k] ~= nil then pcall(function() Lighting[k] = v end) end
-        end
-        table.clear(Backup.Lighting)
+    -- Terrain simples  
+    local terrain = workspace:FindFirstChildOfClass("Terrain")  
+    if terrain then  
+        if next(Backup.Terrain) == nil then  
+            Backup.Terrain.WaterWaveSize = terrain.WaterWaveSize  
+            Backup.Terrain.WaterWaveSpeed = terrain.WaterWaveSpeed  
+            Backup.Terrain.WaterReflectance = terrain.WaterReflectance  
+            Backup.Terrain.WaterTransparency = terrain.WaterTransparency  
+            Backup.Terrain.Decoration = terrain.Decoration  
+        end  
+        safeSet(terrain, "WaterWaveSize", 0, Backup.Terrain)  
+        safeSet(terrain, "WaterWaveSpeed", 0, Backup.Terrain)  
+        safeSet(terrain, "WaterReflectance", 0, Backup.Terrain)  
+        safeSet(terrain, "WaterTransparency", 1, Backup.Terrain)  
+        safeSet(terrain, "Decoration", false, Backup.Terrain)  
+    end  
+else  
+    -- Restaurar  
+    restoreBucket(Backup.Parts)  
+    -- Lighting parte já será restaurada quando RemoveFX off, mas garantimos:  
+    for k,v in pairs(Backup.Lighting) do  
+        if Lighting[k] ~= nil then pcall(function() Lighting[k] = v end) end  
+    end  
+    table.clear(Backup.Lighting)  
 
-        local terrain = workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            for k,v in pairs(Backup.Terrain) do
-                pcall(function() terrain[k] = v end)
-            end
-        end
-        table.clear(Backup.Terrain)
-    end
+    local terrain = workspace:FindFirstChildOfClass("Terrain")  
+    if terrain then  
+        for k,v in pairs(Backup.Terrain) do  
+            pcall(function() terrain[k] = v end)  
+        end  
+    end  
+    table.clear(Backup.Terrain)  
+end
+
 end
 
 -- 3) Tirar Animações do personagem local
 local function stopAllTracks(hum)
-    local animator = hum and hum:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    for _,track in ipairs(animator:GetPlayingAnimationTracks()) do
-        if not Backup.CharTracks[track] then
-            Backup.CharTracks[track] = true
-        end
-        pcall(function() track:Stop(0) end)
-    end
+local animator = hum and hum:FindFirstChildOfClass("Animator")
+if not animator then return end
+for _,track in ipairs(animator:GetPlayingAnimationTracks()) do
+if not Backup.CharTracks[track] then
+Backup.CharTracks[track] = true
+end
+pcall(function() track:Stop(0) end)
+end
 end
 
 local Char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -210,89 +212,89 @@ local Humanoid = Char:WaitForChild("Humanoid")
 
 local NoAnimConn -- para bloquear novas animações
 local function applyNoAnims(on)
-    State.NoAnims = on
-    if on then
-        stopAllTracks(Humanoid)
-        if NoAnimConn then NoAnimConn:Disconnect() end
-        NoAnimConn = Humanoid.AnimationPlayed:Connect(function(track)
-            pcall(function() track:Stop(0) end)
-        end)
-    else
-        if NoAnimConn then NoAnimConn:Disconnect() NoAnimConn = nil end
-        -- não há como “forçar” restaurar quais animações estavam; elas tocarão naturalmente quando movimento acontecer
-        table.clear(Backup.CharTracks)
-    end
+State.NoAnims = on
+if on then
+stopAllTracks(Humanoid)
+if NoAnimConn then NoAnimConn:Disconnect() end
+NoAnimConn = Humanoid.AnimationPlayed:Connect(function(track)
+pcall(function() track:Stop(0) end)
+end)
+else
+if NoAnimConn then NoAnimConn:Disconnect() NoAnimConn = nil end
+-- não há como “forçar” restaurar quais animações estavam; elas tocarão naturalmente quando movimento acontecer
+table.clear(Backup.CharTracks)
+end
 end
 
 -- Atualizar humanoid on respawn
 LocalPlayer.CharacterAdded:Connect(function(c)
-    Char = c
-    Humanoid = c:WaitForChild("Humanoid")
-    if State.NoAnims then
-        task.defer(function() applyNoAnims(true) end)
-    end
+Char = c
+Humanoid = c:WaitForChild("Humanoid")
+if State.NoAnims then
+task.defer(function() applyNoAnims(true) end)
+end
 end)
 
 -- 4) Esconder partículas (ParticleEmitter/Trail/Beam)
 local function applyHideParticles(on)
-    State.HideParticles = on
-    if on then
-        for inst in each({"ParticleEmitter","Trail","Beam"}) do
-            if not Backup.Particles[inst] then
-                Backup.Particles[inst] = { Enabled = (inst:IsA("ParticleEmitter") or inst:IsA("Trail")) and inst.Enabled or nil, Transparency = inst:IsA("Beam") and inst.Transparency or nil }
-            end
-            if inst:IsA("ParticleEmitter") or inst:IsA("Trail") then
-                safeSet(inst, "Enabled", false, Backup.Particles)
-            elseif inst:IsA("Beam") then
-                safeSet(inst, "Transparency", NumberSequence.new(1), Backup.Particles)
-            end
-        end
-        -- listeners para novos objetos
-        if not State._ParticlesConn then
-            State._ParticlesConn = workspace.DescendantAdded:Connect(function(inst)
-                if not State.HideParticles then return end
-                if inst:IsA("ParticleEmitter") then inst.Enabled = false
-                elseif inst:IsA("Trail") then inst.Enabled = false
-                elseif inst:IsA("Beam") then inst.Transparency = NumberSequence.new(1) end
-            end)
-        end
-    else
-        if State._ParticlesConn then State._ParticlesConn:Disconnect() State._ParticlesConn = nil end
-        restoreBucket(Backup.Particles)
-    end
+State.HideParticles = on
+if on then
+for inst in each({"ParticleEmitter","Trail","Beam"}) do
+if not Backup.Particles[inst] then
+Backup.Particles[inst] = { Enabled = (inst:IsA("ParticleEmitter") or inst:IsA("Trail")) and inst.Enabled or nil, Transparency = inst:IsA("Beam") and inst.Transparency or nil }
+end
+if inst:IsA("ParticleEmitter") or inst:IsA("Trail") then
+safeSet(inst, "Enabled", false, Backup.Particles)
+elseif inst:IsA("Beam") then
+safeSet(inst, "Transparency", NumberSequence.new(1), Backup.Particles)
+end
+end
+-- listeners para novos objetos
+if not State._ParticlesConn then
+State._ParticlesConn = workspace.DescendantAdded:Connect(function(inst)
+if not State.HideParticles then return end
+if inst:IsA("ParticleEmitter") then inst.Enabled = false
+elseif inst:IsA("Trail") then inst.Enabled = false
+elseif inst:IsA("Beam") then inst.Transparency = NumberSequence.new(1) end
+end)
+end
+else
+if State._ParticlesConn then State._ParticlesConn:Disconnect() State._ParticlesConn = nil end
+restoreBucket(Backup.Particles)
+end
 end
 
 -- 5) Esconder Decals/Textures
 local function applyHideDecals(on)
-    State.HideDecals = on
-    if on then
-        for inst in each({"Decal","Texture"}) do
-            if not Backup.Decals[inst] then
-                Backup.Decals[inst] = { Transparency = inst.Transparency }
-            end
-            safeSet(inst, "Transparency", 1, Backup.Decals)
-        end
-        if not State._DecalsConn then
-            State._DecalsConn = workspace.DescendantAdded:Connect(function(inst)
-                if not State.HideDecals then return end
-                if inst:IsA("Decal") or inst:IsA("Texture") then
-                    pcall(function() inst.Transparency = 1 end)
-                end
-            end)
-        end
-    else
-        if State._DecalsConn then State._DecalsConn:Disconnect() State._DecalsConn = nil end
-        restoreBucket(Backup.Decals)
-    end
+State.HideDecals = on
+if on then
+for inst in each({"Decal","Texture"}) do
+if not Backup.Decals[inst] then
+Backup.Decals[inst] = { Transparency = inst.Transparency }
+end
+safeSet(inst, "Transparency", 1, Backup.Decals)
+end
+if not State._DecalsConn then
+State._DecalsConn = workspace.DescendantAdded:Connect(function(inst)
+if not State.HideDecals then return end
+if inst:IsA("Decal") or inst:IsA("Texture") then
+pcall(function() inst.Transparency = 1 end)
+end
+end)
+end
+else
+if State._DecalsConn then State._DecalsConn:Disconnect() State._DecalsConn = nil end
+restoreBucket(Backup.Decals)
+end
 end
 
 -- 6) Restaurar tudo
 local function restoreAll()
-    applyRemoveFX(false)
-    applyLowGFX(false)
-    applyNoAnims(false)
-    applyHideParticles(false)
-    applyHideDecals(false)
+applyRemoveFX(false)
+applyLowGFX(false)
+applyNoAnims(false)
+applyHideParticles(false)
+applyHideDecals(false)
 end
 
 -- ===== UI (bem simples, canto superior esquerdo) =====
@@ -321,71 +323,72 @@ top.Text = "Client Optimizer"
 top.Parent = frame
 
 local function makeToggle(text, order, default, cb)
-    local container = Instance.new("TextButton")
-    container.AutoButtonColor = true
-    container.BackgroundColor3 = Color3.fromRGB(45,45,45)
-    container.Size = UDim2.new(1, -24, 0, 28)
-    container.Position = UDim2.new(0, 12, 0, 30 + (order*32))
-    container.Text = ""
-    container.Parent = frame
-    local c = Instance.new("UICorner", container); c.CornerRadius = UDim.new(0,8)
+local container = Instance.new("TextButton")
+container.AutoButtonColor = true
+container.BackgroundColor3 = Color3.fromRGB(45,45,45)
+container.Size = UDim2.new(1, -24, 0, 28)
+container.Position = UDim2.new(0, 12, 0, 30 + (order*32))
+container.Text = ""
+container.Parent = frame
+local c = Instance.new("UICorner", container); c.CornerRadius = UDim.new(0,8)
 
-    local lbl = Instance.new("TextLabel")
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, -70, 1, 0)
-    lbl.Position = UDim2.new(0, 10, 0, 0)
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 14
-    lbl.TextColor3 = Color3.new(1,1,1)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Text = text
-    lbl.Parent = container
+local lbl = Instance.new("TextLabel")  
+lbl.BackgroundTransparency = 1  
+lbl.Size = UDim2.new(1, -70, 1, 0)  
+lbl.Position = UDim2.new(0, 10, 0, 0)  
+lbl.Font = Enum.Font.Gotham  
+lbl.TextSize = 14  
+lbl.TextColor3 = Color3.new(1,1,1)  
+lbl.TextXAlignment = Enum.TextXAlignment.Left  
+lbl.Text = text  
+lbl.Parent = container  
 
-    local pill = Instance.new("Frame")
-    pill.Size = UDim2.fromOffset(54, 22)
-    pill.Position = UDim2.new(1, -64, 0.5, -11)
-    pill.BackgroundColor3 = Color3.fromRGB(24,24,24)
-    pill.Parent = container
-    local pc = Instance.new("UICorner", pill); pc.CornerRadius = UDim.new(1,0)
+local pill = Instance.new("Frame")  
+pill.Size = UDim2.fromOffset(54, 22)  
+pill.Position = UDim2.new(1, -64, 0.5, -11)  
+pill.BackgroundColor3 = Color3.fromRGB(24,24,24)  
+pill.Parent = container  
+local pc = Instance.new("UICorner", pill); pc.CornerRadius = UDim.new(1,0)  
 
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(22, 22)
-    knob.Position = UDim2.new(0, 0, 0, 0)
-    knob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    knob.Parent = pill
-    local kc = Instance.new("UICorner", knob); kc.CornerRadius = UDim.new(1,0)
+local knob = Instance.new("Frame")  
+knob.Size = UDim2.fromOffset(22, 22)  
+knob.Position = UDim2.new(0, 0, 0, 0)  
+knob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)  
+knob.Parent = pill  
+local kc = Instance.new("UICorner", knob); kc.CornerRadius = UDim.new(1,0)  
 
-    local on = default or false
-    local function render()
-        pill.BackgroundColor3 = on and Color3.fromRGB(0, 200, 200) or Color3.fromRGB(24,24,24)
-        knob.Position = on and UDim2.new(1, -22, 0, 0) or UDim2.new(0, 0, 0, 0)
-    end
-    render()
+local on = default or false  
+local function render()  
+    pill.BackgroundColor3 = on and Color3.fromRGB(0, 200, 200) or Color3.fromRGB(24,24,24)  
+    knob.Position = on and UDim2.new(1, -22, 0, 0) or UDim2.new(0, 0, 0, 0)  
+end  
+render()  
 
-    local function toggle()
-        on = not on
-        render()
-        task.spawn(function() cb(on) end)
-    end
+local function toggle()  
+    on = not on  
+    render()  
+    task.spawn(function() cb(on) end)  
+end  
 
-    container.MouseButton1Click:Connect(toggle)
-    -- aplica default
-    task.defer(function() cb(on) end)
+container.MouseButton1Click:Connect(toggle)  
+-- aplica default  
+task.defer(function() cb(on) end)
+
 end
 
 local function makeButton(text, order, cb)
-    local btn = Instance.new("TextButton")
-    btn.AutoButtonColor = true
-    btn.BackgroundColor3 = Color3.fromRGB(0, 180, 180)
-    btn.Size = UDim2.new(1, -24, 0, 28)
-    btn.Position = UDim2.new(0, 12, 0, 30 + (order*32))
-    btn.TextColor3 = Color3.new(1,1,1)
-    btn.Text = text
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 14
-    btn.Parent = frame
-    local c = Instance.new("UICorner", btn); c.CornerRadius = UDim.new(0,8)
-    btn.MouseButton1Click:Connect(function() task.spawn(cb) end)
+local btn = Instance.new("TextButton")
+btn.AutoButtonColor = true
+btn.BackgroundColor3 = Color3.fromRGB(0, 180, 180)
+btn.Size = UDim2.new(1, -24, 0, 28)
+btn.Position = UDim2.new(0, 12, 0, 30 + (order*32))
+btn.TextColor3 = Color3.new(1,1,1)
+btn.Text = text
+btn.Font = Enum.Font.GothamSemibold
+btn.TextSize = 14
+btn.Parent = frame
+local c = Instance.new("UICorner", btn); c.CornerRadius = UDim.new(0,8)
+btn.MouseButton1Click:Connect(function() task.spawn(cb) end)
 end
 
 -- Toggles
@@ -400,45 +403,70 @@ makeButton("Restaurar Tudo", 6, restoreAll)
 
 -- Arrastar painel
 do
-    local dragging, startPos, startInput
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            startPos = frame.Position
-            startInput = input
-        end
-    end)
-    frame.InputEnded:Connect(function(input)
-        if input == startInput then dragging = false end
-    end)
-    frame.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - startInput.Position
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
+local dragging, startPos, startInput
+frame.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+dragging = true
+startPos = frame.Position
+startInput = input
+end
+end)
+frame.InputEnded:Connect(function(input)
+if input == startInput then dragging = false end
+end)
+frame.InputChanged:Connect(function(input)
+if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+local delta = input.Position - startInput.Position
+frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+end)
 end
 
 print("[ClientOptimizer] Pronto. Painel carregado.")
--- ======= BOTÃO DE ABRIR/FECHAR =======
+
+-- CXZ Script (Sistema de Abrir/Fechar Painel)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CXZ_UI"
+screenGui.Parent = game:GetService("CoreGui")
+
+-- Painel principal
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.fromOffset(300, 250)
+mainFrame.Position = UDim2.new(0.5, -150, 0.5, -125)
+mainFrame.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
+-- Botão de abrir/fechar
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-toggleBtn.Position = UDim2.new(0, 20, 0.5, -25) -- canto esquerdo da tela
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -25)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
 toggleBtn.Text = "CXZ"
 toggleBtn.TextColor3 = Color3.new(1, 1, 1)
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 14
-toggleBtn.Parent = gui
+toggleBtn.Parent = screenGui
 toggleBtn.Active = true
-toggleBtn.Draggable = true -- botão pode ser arrastado
+toggleBtn.Draggable = true
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
 
-local btnCorner = Instance.new("UICorner", toggleBtn)
-btnCorner.CornerRadius = UDim.new(1, 0) -- forma redonda
-
--- painel começa fechado
-main.Visible = false
-
+-- Função de alternar visibilidade
 toggleBtn.MouseButton1Click:Connect(function()
-    main.Visible = not main.Visible
+    mainFrame.Visible = not mainFrame.Visible
 end)
+
+-- Área de conteúdo (coloque suas funções aqui)
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, -20, 0, 24)
+title.Position = UDim2.new(0, 10, 0, 6)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Text = "CXZ Script (Beta)"
+title.Parent = mainFrame
+
+-- Fim do sistema de abrir/fechar
